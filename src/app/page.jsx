@@ -3,6 +3,7 @@ import Image from "next/image";
 import { assets } from "../../assets/assets";
 import {useState} from "react";
 import Sidebar from "../../components/Sidebar";
+import PromptBox from "../../components/PromptBox";
 
 export default function Home() {
   const [expand,setExpand]=useState(false)
@@ -30,7 +31,7 @@ export default function Home() {
         </>
       ):(<div></div>)}
 
-      {/* Prompt box */}
+      <PromptBox isLoading={isLoading} setIsLoading={setIsLoading}/>
       <p className="text-xs absolute bottom-1 text-gray-500">Built by: Krishna</p>
     </div>
    </div>
