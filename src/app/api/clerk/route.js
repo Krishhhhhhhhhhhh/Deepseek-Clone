@@ -7,7 +7,7 @@ export async function POST(req) {
   try {
     const wh = new Webhook(process.env.SIGNING_SECRET);
 
-    const headerPayload = headers();
+    const headerPayload = await headers();
 
     const svixheaders = {
       "svix-id": headerPayload.get("svix-id"),
