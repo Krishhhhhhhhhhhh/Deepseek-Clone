@@ -20,14 +20,17 @@ export async function POST(req) {
 
     const { data, type } = wh.verify(body, svixheaders);
 
-    const userData = {
-      _id: data.id,
-      email: data.email_addresses?.[0]?.email_address,
-      name: `${data.first_name} ${data.last_name}`,
-      image: data.image_url,
-    };
+console.log("📩 Webhook event:", type);
 
-    await connectDB();
+const userData = {
+  _id: data.id,
+  email: data.email_addresses?.[0]?.email_address,
+  name: `${data.first_name} ${data.last_name}`,
+  image: data.image_url,
+};
+
+await connectDB();
+console.log("🔥 DB connected & webhook triggered");
 
     switch (type) {
       case 'user.created':
