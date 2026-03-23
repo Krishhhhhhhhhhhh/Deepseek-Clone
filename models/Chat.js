@@ -16,6 +16,6 @@ const ChatSchema=new mongoose.Schema({
     timestamps:true
 })
 
-const Chat=mongoose.models.User || mongoose.model("Chat",ChatSchema)
+const Chat=mongoose.models.Chat || mongoose.model("Chat",ChatSchema)
 
 export default Chat;
