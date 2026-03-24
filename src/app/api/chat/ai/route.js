@@ -103,7 +103,7 @@ const getHttpStatus = (error) => {
 export async function POST(req) {
   try {
     const { userId } = getAuth(req);
-    const { chatId, prompt } = await req.json();
+    const { chatId, prompt, files } = await req.json();
 
     if (!userId) {
       return NextResponse.json(
@@ -130,11 +130,19 @@ export async function POST(req) {
       );
     }
 
+    // Build user message content (including file info)
+    let userContent = prompt;
+    if(files && files.length > 0){
+      const fileInfo = files.map(f => `[File: ${f.name} (${f.type}, ${f.size} bytes)]`).join('\n');
+      userContent += `\n\n${fileInfo}`;
+    }
+
     // Save user message
     const userPrompt = {
       role: "user",
-      content: prompt,
+      content: userContent,
       timestamp: Date.now(),
+      files: files?.map(f => ({name: f.name, type: f.type, size: f.size})) || []
     };
 
     chat.messages.push(userPrompt);
@@ -145,7 +153,7 @@ export async function POST(req) {
     const messages = [
       {
         role: "system",
-        content: "You are a helpful AI assistant like DeepSeek. Reply helpfully and concisely.",
+        content: "You are a helpful AI assistant like DeepSeek. Reply helpfully and concisely. When files are provided, analyze and use them to help the user.",
       },
       ...chat.messages
         .slice(-MAX_HISTORY)

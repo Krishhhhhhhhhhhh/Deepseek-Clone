@@ -6,6 +6,8 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 const PromptBox = ({setIsLoading,isLoading}) => {
     const [prompt,setPrompt]=useState('');
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const fileInputRef = React.useRef(null);
    
     const {user,chats,setChats,selectedChat,setSelectedChat,createNewChat,fetchUsersChats}=useAppContext();
     
@@ -13,6 +15,40 @@ const PromptBox = ({setIsLoading,isLoading}) => {
         if(e.key === "Enter" && !e.shiftKey){
             e.preventDefault();
             sendPrompt(e);
+        }
+    }
+    
+    const handleFileUpload=(e)=>{
+        const files=e.target.files;
+        if(files && files.length>0){
+            const newFiles = Array.from(files).map(file => ({
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                file: file
+            }));
+            setSelectedFiles([...selectedFiles, ...newFiles]);
+            toast.success(`${files.length} file(s) added`);
+            if(fileInputRef.current) fileInputRef.current.value = '';
+        }
+    }
+    
+    const removeFile = (index) => {
+        const updatedFiles = selectedFiles.filter((_, i) => i !== index);
+        setSelectedFiles(updatedFiles);
+    }
+    
+    const getFileIcon = (type) => {
+        if(type.startsWith('image/')) return '🖼️';
+        if(type === 'application/pdf') return '📄';
+        if(type.includes('word')) return '📝';
+        if(type === 'text/plain') return '📋';
+        return '📎';
+    }
+    
+    const handlePinClick=()=>{
+        if(fileInputRef.current){
+            fileInputRef.current.click();
         }
     }
     const sendPrompt=async(e)=>{
@@ -33,6 +69,7 @@ const PromptBox = ({setIsLoading,isLoading}) => {
             if(!selectedChat?._id) setSelectedChat(activeChat);
             setIsLoading(true)
             setPrompt("")
+            setSelectedFiles([])
 
             const userPrompt={
                 role:"user",
@@ -54,9 +91,28 @@ const PromptBox = ({setIsLoading,isLoading}) => {
                 }
             })
 
+            // Convert files to base64
+            const filesData = [];
+            for(const fileObj of selectedFiles){
+                const fileData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        resolve({
+                            name: fileObj.name,
+                            type: fileObj.type,
+                            size: fileObj.size,
+                            data: e.target.result
+                        });
+                    };
+                    reader.readAsDataURL(fileObj.file);
+                });
+                filesData.push(fileData);
+            }
+            
             const {data}=await axios.post('/api/chat/ai',{
                 chatId:activeChat._id,
-                prompt
+                prompt,
+                files: filesData
             })
             if(data.success){
                 console.log('AI response:', data.data);
@@ -105,6 +161,23 @@ const PromptBox = ({setIsLoading,isLoading}) => {
   return (
     <form  onSubmit={sendPrompt}
     className={`w-full ${selectedChat?.messages?.length>0 ?"max-w-3xl":"max-w-2xl"} bg-[#404045] p-4 rounded-3xl mt-4 transition-all`}>
+        {selectedFiles.length > 0 && (
+            <div className='mb-3 flex flex-wrap gap-2'>
+                {selectedFiles.map((file, index) => (
+                    <div key={index} className='flex items-center gap-2 bg-gray-700/50 px-3 py-2 rounded-lg text-xs text-white'>
+                        <span>{getFileIcon(file.type)}</span>
+                        <span className='truncate max-w-32'>{file.name}</span>
+                        <button
+                            type='button'
+                            onClick={() => removeFile(index)}
+                            className='ml-1 hover:bg-gray-600 rounded px-1 py-0.5'
+                        >
+                            ✕
+                        </button>
+                    </div>
+                ))}
+            </div>
+        )}
         <textarea onKeyDown={handleKeyDown}
         className='outline-none w-full resize-none overflow-hidden wrap-break-word bg-transparent' rows={2} placeholder='Message DeepSeek' required
         onChange={(e)=>setPrompt(e.target.value)} value={prompt}/>
@@ -124,10 +197,19 @@ const PromptBox = ({setIsLoading,isLoading}) => {
             </div>
 
             <div className='flex items-center gap-2'>
-                <Image src={assets.pin_icon} alt='' className='w-4 cursor-pointer'/>
-                <button className={`${prompt?'bg-primary':'bg-[#71717a]'}
-                rounded-full p-2 cursor-pointer`}>
-                    <Image src={prompt?assets.arrow_icon:assets.arrow_icon_dull} alt='' className='w-3.5 h-auto aspect-square'/>
+                <div onClick={handlePinClick} className='cursor-pointer hover:opacity-70 transition'>
+                    <Image src={assets.pin_icon} alt='Upload files' className='w-4 cursor-pointer'/>
+                </div>
+                <input 
+                    ref={fileInputRef}
+                    type='file'
+                    multiple
+                    accept='image/*,.pdf,.doc,.docx,.txt'
+                    onChange={handleFileUpload}
+                    className='hidden'
+                />
+                <button disabled={!prompt && selectedFiles.length === 0} className={`${(prompt || selectedFiles.length > 0)?'bg-primary':'bg-[#71717a]'} rounded-full p-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <Image src={(prompt || selectedFiles.length > 0)?assets.arrow_icon:assets.arrow_icon_dull} alt='' className='w-3.5 h-auto aspect-square'/>
                 </button>
             </div>
 
