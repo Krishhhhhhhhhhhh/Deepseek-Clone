@@ -16,7 +16,7 @@ export async function POST(req){
         }
         //Connect to mongodb database and delete the chat
         await connectDB();
-        await Chat.deleteOne({_id,chatId,userId})
+        await Chat.deleteOne({_id:chatId, userId})
 
         return NextResponse.json({success:true,message:"Chat Deleted"});
     }
