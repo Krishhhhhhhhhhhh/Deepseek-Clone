@@ -104,7 +104,7 @@ const PromptBox = ({setIsLoading,isLoading}) => {
     }
   return (
     <form  onSubmit={sendPrompt}
-    className={`w-full ${false?"max-w-3xl":"max-w-2xl"} bg-[#404045] p-4 rounded-3xl mt-4 transition-all`}>
+    className={`w-full ${selectedChat.messages.length>0 ?"max-w-3xl":"max-w-2xl"} bg-[#404045] p-4 rounded-3xl mt-4 transition-all`}>
         <textarea onKeyDown={handleKeyDown}
         className='outline-none w-full resize-none overflow-hidden wrap-break-word bg-transparent' rows={2} placeholder='Message DeepSeek' required
         onChange={(e)=>setPrompt(e.target.value)} value={prompt}/>
@@ -127,7 +127,7 @@ const PromptBox = ({setIsLoading,isLoading}) => {
                 <Image src={assets.pin_icon} alt='' className='w-4 cursor-pointer'/>
                 <button className={`${prompt?'bg-primary':'bg-[#71717a]'}
                 rounded-full p-2 cursor-pointer`}>
-                    <Image src={prompt?assets.arrow_icon:assets.arrow_icon_dull} alt='' className='w-3.5 aspect-square'/>
+                    <Image src={prompt?assets.arrow_icon:assets.arrow_icon_dull} alt='' className='w-3.5 h-auto aspect-square'/>
                 </button>
             </div>
 

@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./prism.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { AppContextProvider } from "../../context/AppContext";
 import { Toaster } from "react-hot-toast";

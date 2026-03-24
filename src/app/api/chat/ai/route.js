@@ -1,89 +1,101 @@
 export const maxDuration = 60;
 
-import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { getAuth } from "@clerk/nextjs/server";
 import connectDB from "../../../../../config/db";
 import Chat from "../../../../../models/Chat";
 
-// Parse multiple keys from env
-const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
-  .split(",")
-  .map(k => k.trim())
-  .filter(Boolean);
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-// Model fallback list
+// ✅ Model fallback list — all free on OpenRouter
 const MODEL_CANDIDATES = [
-  process.env.GEMINI_MODEL,
- "gemini-1.5-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-2.0-flash", 
+  process.env.OPENROUTER_MODEL,
+  "openrouter/free",                         // ✅ Auto-picks best available free model
+  "deepseek/deepseek-r1:free",               // DeepSeek R1
+  "deepseek/deepseek-chat-v3-0324:free",     // DeepSeek V3 (updated ID)
+  "meta-llama/llama-3.3-70b-instruct:free",  // Llama fallback
+  "google/gemma-3-27b-it:free",              // Gemma fallback
 ].filter(Boolean);
 
-// Gemini fallback logic
-const generateWithFallbackModel = async (contents) => {
-  if (API_KEYS.length === 0) {
-    throw new Error("No Gemini API keys configured.");
+// ✅ OpenRouter API call with model fallback
+const generateWithFallback = async (messages) => {
+  if (!OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY is not configured.");
   }
 
   let lastError;
 
-  for (const apiKey of API_KEYS) {
-    const ai = new GoogleGenAI({ apiKey });
+  for (const model of MODEL_CANDIDATES) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+          "X-Title": "DeepSeek Clone",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: 1000,
+        }),
+      });
 
-    for (const model of MODEL_CANDIDATES) {
-      try {
-        const result = await ai.models.generateContent({ model, contents });
-        console.log(`✅ Success with key ...${apiKey.slice(-4)}, model: ${model}`);
-        return { result, model };
-      } catch (error) {
-        lastError = error;
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMsg = errorData?.error?.message || response.statusText;
 
-        const message = error?.message || "";
-        const status = error?.status;
+        console.warn(`❌ Failed model ${model}: ${errorMsg}`);
 
-        const modelNotFound = message.includes("NOT_FOUND") || message.includes("not found");
-        const quotaExhausted = message.includes("RESOURCE_EXHAUSTED") || status === 429;
-        const invalidKey = status === 401 || message.toLowerCase().includes("api key");
+        if (response.status === 429 || response.status === 503 || response.status === 404) {
+          lastError = new Error(errorMsg);
+          continue; // try next model
+        }
 
-        console.warn(`❌ Failed key ...${apiKey.slice(-4)}, model ${model}: ${message}`);
-
-        if (modelNotFound) continue;
-        if (quotaExhausted || invalidKey) break;
-
-        throw error;
+        throw new Error(errorMsg);
       }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+
+      if (!text) throw new Error("Empty response from model");
+
+      console.log(`✅ Success with model: ${model}`);
+      return { text, model };
+
+    } catch (error) {
+      lastError = error;
+      console.warn(`❌ Failed model ${model}: ${error.message}`);
+      continue;
     }
   }
 
-  throw lastError || new Error("All Gemini API keys/models exhausted.");
+  throw lastError || new Error("All models exhausted.");
 };
 
 // Friendly error message
-const getFriendlyAiErrorMessage = (error) => {
+const getFriendlyErrorMessage = (error) => {
   const message = error?.message || "";
-  const status = error?.status;
 
-  if (status === 429 || message.includes("quota")) {
-    return "All Gemini API keys exceeded quota. Try again later.";
+  if (message.includes("rate limit") || message.includes("429")) {
+    return "Rate limit reached. Please try again in a moment.";
+  }
+  if (message.includes("API key") || message.includes("401")) {
+    return "Invalid OpenRouter API key. Check your .env.local file.";
+  }
+  if (message.includes("quota") || message.includes("billing")) {
+    return "OpenRouter quota exceeded. Check your account at openrouter.ai.";
   }
 
-  if (status === 401 || message.toLowerCase().includes("api key")) {
-    return "Invalid Gemini API key. Check your .env file.";
-  }
-
-  return message || "Failed to generate AI response";
+  return message || "Failed to generate AI response.";
 };
 
 // HTTP status mapper
-const getHttpStatusFromError = (error) => {
+const getHttpStatus = (error) => {
   const message = (error?.message || "").toLowerCase();
-  const status = error?.status;
-
-  if (status === 429 || message.includes("quota")) return 429;
-  if (status === 401 || message.includes("api key")) return 502;
-  if (status === 400) return 400;
-
+  if (message.includes("rate limit") || message.includes("429")) return 429;
+  if (message.includes("api key") || message.includes("401")) return 401;
   return 500;
 };
 
@@ -97,6 +109,13 @@ export async function POST(req) {
       return NextResponse.json(
         { success: false, message: "User not authenticated" },
         { status: 401 }
+      );
+    }
+
+    if (!prompt || !chatId) {
+      return NextResponse.json(
+        { success: false, message: "Missing prompt or chatId" },
+        { status: 400 }
       );
     }
 
@@ -120,27 +139,24 @@ export async function POST(req) {
 
     chat.messages.push(userPrompt);
 
-    // ✅ Limit history (important)
     const MAX_HISTORY = 10;
 
-    const history = chat.messages
-      .slice(-MAX_HISTORY)
-      .map((msg) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
-      }));
-
-    // ✅ Optional system instruction
-    history.unshift({
-      role: "user",
-      parts: [{ text: "You are a helpful AI assistant like ChatGPT." }],
-    });
+    // ✅ OpenRouter uses standard OpenAI-style messages (no Gemini parts format)
+    const messages = [
+      {
+        role: "system",
+        content: "You are a helpful AI assistant like DeepSeek. Reply helpfully and concisely.",
+      },
+      ...chat.messages
+        .slice(-MAX_HISTORY)
+        .map((msg) => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        })),
+    ];
 
     // Generate AI response
-    const { result, model } = await generateWithFallbackModel(history);
-
-    // ✅ FIXED: correct response extraction
-    const text = result.response.text();
+    const { text, model } = await generateWithFallback(messages);
 
     const aiMessage = {
       role: "assistant",
@@ -148,7 +164,7 @@ export async function POST(req) {
       timestamp: Date.now(),
     };
 
-    console.log("🤖 Gemini model used:", model);
+    console.log("🤖 Model used:", model);
 
     // Save AI response
     chat.messages.push(aiMessage);
@@ -160,14 +176,14 @@ export async function POST(req) {
     });
 
   } catch (error) {
-    console.error("❌ AI route error:", error.message, error.stack);
+    console.error("❌ AI route error:", error.message);
 
     return NextResponse.json(
       {
         success: false,
-        message: getFriendlyAiErrorMessage(error),
+        message: getFriendlyErrorMessage(error),
       },
-      { status: getHttpStatusFromError(error) }
+      { status: getHttpStatus(error) }
     );
   }
 }
